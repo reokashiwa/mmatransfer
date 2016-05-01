@@ -8,8 +8,8 @@ opt = OptionParser.new
 OPTS = Hash.new
 OPTS[:target] = Array.new
 OPTS[:indexfile] = "index.db"
-opt.on('-f VAL', '--filename VAL') {|v| OPTS[:filename] = v}
-opt.on('-t VAL', '--target VAL') {|v| OPTS[:target] << v }
+opt.on('-f VAL', '--target-file VAL') {|v| OPTS[:filename] = v}
+opt.on('-d VAL', '--target-directory VAL') {|v| OPTS[:target] << v }
 opt.on('-i VAL', '--indexfile VAL') {|v| OPTS[:indexfile] = v}
 opt.on('-c VAL', '--configfile VAL') {|v| OPTS[:configfile] = v}
 opt.parse!(ARGV)
