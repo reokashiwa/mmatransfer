@@ -15,4 +15,7 @@ Overview
 
 * mmatransfer.rb
 
-`ruby mmatransfer.rb [-d|--target-directory <target Directory name>] [-f|--target-file <target File name>] [-i|--index-file <Index File Name>] [-c|--config-file <Config File Name>]`
+    ruby mmatransfer.rb [-d|--target-directory <target Directory name>] 
+                        [-f|--target-file <target File name>]
+                        [-i|--index-file <Index File Name>]
+                        [-c|--config-file <Config File Name>]`
