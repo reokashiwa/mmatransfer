@@ -72,14 +72,7 @@ def get_digest(filename)
       printf("Error: message digest calulation. %s\n%s\n%s\n", filename,
              e.class, e.message)
     end
-#     digest = `#{CONF["MD5_PATH"]} -q "#{filename}" 2>&1`
-#     if $?.exitstatus == 0
-#       digest.chomp!
-#       addDB(digest, filename)
-#     else
-#       printf("Error: message digest calulation %s\n%s\n%s\n",
-#              filename, digest.chomp!, $?)
-    #     end
+
     digest = digest_object.hexdigest
     addDB(digest, filename)
   end
@@ -176,8 +169,6 @@ elsif
   if OPTS[:filename] != nil
     filename = OPTS[:filename]
     digest = get_digest(filename) 
-    # mmatransfer(digest, filename)
+    mmatransfer(digest, filename)
   end
 end
-
-#getRes("~/Movies/sample.mpg")
