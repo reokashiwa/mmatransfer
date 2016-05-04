@@ -3,6 +3,7 @@
 require 'optparse'
 require 'pstore'
 require 'yaml'
+require 'openssl'
 
 opt = OptionParser.new
 OPTS = Hash.new
@@ -26,18 +27,18 @@ def recursive_glob(directory_name)
   filenames.each{|filename|
     recursive_glob(filename + "/*") if File.ftype(filename) == "directory"
     if /\.mpg/ =~ filename || /\.ts/ =~ filename
-      md5 = get_md5(filename) 
-      mmatransfer(md5, filename)
+      digest = get_digest(filename) 
+      mmatransfer(digest, filename)
     end
   }
 end
 
-def get_md5(filename)
+def get_digest(filename)
   db = PStore.new(OPTS[:indexfile])
 
   basename  = File.basename(filename)
   filesize  = FileTest.size(filename)
-  md5 = String.new
+  digest = String.new
   record_exist = false
 
   db.transaction do
@@ -45,34 +46,56 @@ def get_md5(filename)
       if basename == db[name]["basename"] && filesize == db[name]["filesize"]
         record_exist = true
         printf("%s\t record exists.\n", name)
-        md5 = name
+        digest = name
         break
       end
     }
   end
 
   if ! record_exist
-    printf("%s\t record does not exists.\n", basename)
-    md5 = `#{CONF["MD5_PATH"]} -q "#{filename}" 2>&1`
-    if $?.exitstatus == 0
-      md5.chomp!
-      addDB(md5, filename)
-    else
-      printf("MD5 error: %s\n%s\n%s\n", filename, md5.chomp!, $?)
+    printf("%s\t record does not exists. Calculate message digest.\n",
+           basename)
+    digest_class = OpenSSL.const_get("OpenSSL::Digest::" +
+                                     CONF["DIGEST_ALGORITHM"].upcase)
+    digest_object = digest_class.new
+    begin
+      File.open(filename, "rb"){|f|
+        buf = ""
+        while f.read(16384, buf)
+          digest_object.update(buf)
+        end
+      }
+    rescue SystemCallError => e
+      printf("Error: message digest calulation. %s\n%s\n%s\n", filename,
+             e.class, e.message)
+    rescue IOError => e
+      printf("Error: message digest calulation. %s\n%s\n%s\n", filename,
+             e.class, e.message)
     end
+#     digest = `#{CONF["MD5_PATH"]} -q "#{filename}" 2>&1`
+#     if $?.exitstatus == 0
+#       digest.chomp!
+#       addDB(digest, filename)
+#     else
+#       printf("Error: message digest calulation %s\n%s\n%s\n",
+#              filename, digest.chomp!, $?)
+    #     end
+    digest = digest_object.hexdigest
+    addDB(digest, filename)
   end
 
-  return md5
+  return digest
 end
 
-def mmatransfer(md5, filename)
+def mmatransfer(digest, filename)
 
   dstFileExist = false
   filesize  = FileTest.size(filename)
   basename  = File.basename(filename)
 
   exec_command = CONF["GSISSH_PATH"] + " -p " + CONF["GSISSH_PORT"].to_s + 
-    " " + CONF["GSISSH_HOST"] + " ls -l " + CONF["DST_DIR"] + "/" + md5
+                 " " + CONF["GSISSH_HOST"] + " ls -l " + CONF["DST_DIR"] +
+                 "/" + digest
   result = `#{exec_command}`
   dstFileExist = true if result.split(" ")[ 4 ] == filesize.to_s
 
@@ -80,23 +103,23 @@ def mmatransfer(md5, filename)
     start_time = Time.now.to_i
     exec_command = CONF["GSISCP_PATH"] + " -P " + CONF["GSISSH_PORT"].to_s +
       ' "' + filename + '" ' + 
-      CONF["GSISSH_HOST"] + ":" + CONF["DST_DIR"] + "/" + md5
+      CONF["GSISSH_HOST"] + ":" + CONF["DST_DIR"] + "/" + digest
     result = `#{exec_command}`
     end_time = Time.now.to_i
     printf("%s\t%s\t%d [sec]\n", basename, filesize, (end_time - start_time))
   else
-    printf("Filename:%s is Exist (%s).\n", filename, md5)
+    printf("Filename:%s is Exist (%s).\n", filename, digest)
   end
 end
 
-def addDB(md5, filename)
+def addDB(digest, filename)
 
   basename  = File.basename(filename)
   filesize  = FileTest.size(filename)
   db = PStore.new(OPTS[:indexfile])
 
   db.transaction do
-    if db[md5] == nil
+    if db[digest] == nil
       ctime = File.ctime(filename) if File.ctime(filename) != nil
       result = `#{CONF["FFMPEG_PATH"]} -i "#{filename}" 2>&1`
       resultArray = result.split(/\n[\s]*/)
@@ -124,17 +147,23 @@ def addDB(md5, filename)
              bitrate,
              width,
              height)
-      db[md5] = Hash.new
-      db[md5]["basename"] = basename
-      db[md5]["filesize"] = filesize
-      db[md5]["ctime"] = ctime
-      db[md5]["duration"] = duration if duration != nil
-      db[md5]["start"] = start       if start != nil
-      db[md5]["bitrate"] = bitrate   if bitrate != nil
-      db[md5]["width"] = width       if width != nil
-      db[md5]["height"] = height     if height != nil
+      db[digest] = Hash.new
+      db[digest]["basename"] = basename
+      db[digest]["filesize"] = filesize
+      db[digest]["ctime"] = ctime
+      db[digest]["duration"] = duration if duration != nil
+      db[digest]["start"] = start       if start != nil
+      db[digest]["bitrate"] = bitrate   if bitrate != nil
+      db[digest]["width"] = width       if width != nil
+      db[digest]["height"] = height     if height != nil
     end
   end
+end
+
+algorithm_name = CONF["DIGEST_ALGORITHM"].upcase
+if ! OpenSSL::Digest.const_defined?(algorithm_name)
+  printf("Message digest algorithm: %s is not supported\n", algorithm_name)
+  exit(1)
 end
 
 if target_directories.empty? && OPTS[:filename] == nil
@@ -146,8 +175,8 @@ elsif
   }
   if OPTS[:filename] != nil
     filename = OPTS[:filename]
-    md5 = get_md5(filename) 
-    mmatransfer(md5, filename)
+    digest = get_digest(filename) 
+    # mmatransfer(digest, filename)
   end
 end
 
