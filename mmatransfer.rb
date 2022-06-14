@@ -9,6 +9,7 @@ opt = OptionParser.new
 OPTS = Hash.new
 OPTS[:target] = Array.new
 OPTS[:indexfile] = "index.db"
+OPTS[:configfile] = "conf.yaml"
 opt.on('-f VAL', '--target-file VAL') {|v| OPTS[:filename] = v}
 opt.on('-d VAL', '--target-directory VAL') {|v| OPTS[:target] << v }
 opt.on('-i VAL', '--indexfile VAL') {|v| OPTS[:indexfile] = v}
@@ -28,7 +29,7 @@ def recursive_glob(directory_name)
     recursive_glob(filename + "/*") if File.ftype(filename) == "directory"
     if /\.mpg/ =~ filename || /\.ts/ =~ filename
       digest = get_digest(filename) 
-      mmatransfer(digest, filename)
+      #mmatransfer(digest, filename)
     end
   }
 end
@@ -36,10 +37,15 @@ end
 def get_digest(filename)
   db = PStore.new(OPTS[:indexfile])
 
-  basename  = File.basename(filename)
-  filesize  = FileTest.size(filename)
-  digest = String.new
-  record_exist = false
+  if FileTest.exist?(filename)
+    basename  = File.basename(filename)
+    filesize  = FileTest.size(filename)
+    digest = String.new
+    record_exist = false
+  else
+    printf("Filename: %s does not exist. exit.\n", filename)
+    exit(1)
+  end
 
   db.transaction do
     db.roots.each{|name|
@@ -86,22 +92,31 @@ def mmatransfer(digest, filename)
   filesize  = FileTest.size(filename)
   basename  = File.basename(filename)
 
-  exec_command = CONF["GSISSH_PATH"] + " -p " + CONF["GSISSH_PORT"].to_s + 
-                 " " + CONF["GSISSH_HOST"] + " ls -l " + CONF["DST_DIR"] +
-                 "/" + digest
-  result = `#{exec_command}`
-  dstFileExist = true if result.split(" ")[ 4 ] == filesize.to_s
+  case CONF["TRANSFER_METHOD"]
+  when "CP"
+    destination_filename = CONF["CP_DESTINATION_PATH"] + "/" + digest
+    dstFileExist = FileTest.exist?(destination_filename)
+    exec_command = CONF["CP_PATH"] + ' -a "' + filename + '" "' + destination_filename + '"'
+  when "GSISCP"
+    exec_command = CONF["GSISSH_PATH"] + " -p " + CONF["GSISSH_PORT"].to_s + 
+                   " " + CONF["GSISSH_HOST"] + " ls -l " + CONF["DST_DIR"] +
+                   "/" + digest
+    result = `#{exec_command}`
+    dstFileExist = true if result.split(" ")[ 4 ] == filesize.to_s
 
-  if ! dstFileExist
-    start_time = Time.now.to_i
     exec_command = CONF["GSISCP_PATH"] + " -P " + CONF["GSISSH_PORT"].to_s +
-      ' "' + filename + '" ' + 
-      CONF["GSISSH_HOST"] + ":" + CONF["DST_DIR"] + "/" + digest
+                   ' "' + filename + '" ' + 
+                   CONF["GSISSH_HOST"] + ":" + CONF["DST_DIR"] + "/" + digest
+  end
+
+  if dstFileExist
+    printf("Filename:%s is Exist (%s).\n", basename, digest)
+  else
+    p exec_command
+    start_time = Time.now.to_i
     result = `#{exec_command}`
     end_time = Time.now.to_i
     printf("%s\t%s\t%d [sec]\n", basename, filesize, (end_time - start_time))
-  else
-    printf("Filename:%s is Exist (%s).\n", filename, digest)
   end
 end
 
